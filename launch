@@ -1,0 +1,123 @@
+#!/bin/bash
+
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+    echo "Usage: launch <command> [subdir]"
+    echo ""
+    echo "Commands:"
+    echo "  start   [subdir]  Start all stacks, or a specific stack"
+    echo "  stop    [subdir]  Stop all stacks, or a specific stack"
+    echo "  restart [subdir]  Restart all stacks, or a specific stack"
+    echo "  pull    [subdir]  Pull latest images for all stacks, or a specific stack"
+    echo "  status           Show status of all stacks"
+    echo ""
+    echo "Available stacks:"
+    find "$BASE_DIR" -mindepth 2 -maxdepth 2 \( -name "docker-compose.yml" -o -name "docker-compose.yaml" -o -name "compose.yml" -o -name "compose.yaml" \) \
+        | xargs -I{} dirname {} | sort | while read -r dir; do
+        echo "  $(basename "$dir")"
+    done
+}
+
+find_compose_dirs() {
+    find "$BASE_DIR" -mindepth 2 -maxdepth 2 \( -name "docker-compose.yml" -o -name "docker-compose.yaml" -o -name "compose.yml" -o -name "compose.yaml" \) \
+        | xargs -I{} dirname {} | sort -u
+}
+
+find_compose_file() {
+    local dir="$1"
+    for name in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+        if [[ -f "$dir/$name" ]]; then
+            echo "$dir/$name"
+            return
+        fi
+    done
+}
+
+run_compose() {
+    local dir="$1"
+    local action="$2"
+    local compose_file
+    compose_file="$(find_compose_file "$dir")"
+    local stack
+    stack="$(basename "$dir")"
+
+    echo "==> [$stack] docker compose $action"
+    docker compose -f "$compose_file" $action
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        echo "==> [$stack] FAILED (exit $exit_code)"
+    fi
+    echo ""
+}
+
+run_all() {
+    local action="$1"
+    while IFS= read -r dir; do
+        run_compose "$dir" "$action"
+    done < <(find_compose_dirs)
+}
+
+run_one() {
+    local subdir="$1"
+    local action="$2"
+    local dir="$BASE_DIR/$subdir"
+
+    if [[ ! -d "$dir" ]]; then
+        echo "Error: subdir '$subdir' not found under $BASE_DIR"
+        exit 1
+    fi
+
+    local compose_file
+    compose_file="$(find_compose_file "$dir")"
+    if [[ -z "$compose_file" ]]; then
+        echo "Error: no docker compose file found in '$dir'"
+        exit 1
+    fi
+
+    run_compose "$dir" "$action"
+}
+
+CMD="${1:-}"
+SUBDIR="${2:-}"
+
+case "$CMD" in
+    start)
+        ACTION="up -d"
+        ;;
+    stop)
+        ACTION="down"
+        ;;
+    restart)
+        ACTION="restart"
+        ;;
+    pull)
+        ACTION="pull"
+        ;;
+    status)
+        while IFS= read -r dir; do
+            stack="$(basename "$dir")"
+            compose_file="$(find_compose_file "$dir")"
+            echo "==> [$stack]"
+            docker compose -f "$compose_file" ps
+            echo ""
+        done < <(find_compose_dirs)
+        exit 0
+        ;;
+    help|--help|-h|"")
+        usage
+        exit 0
+        ;;
+    *)
+        echo "Error: unknown command '$CMD'"
+        echo ""
+        usage
+        exit 1
+        ;;
+esac
+
+if [[ -n "$SUBDIR" ]]; then
+    run_one "$SUBDIR" "$ACTION"
+else
+    run_all "$ACTION"
+fi

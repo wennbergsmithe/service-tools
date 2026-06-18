@@ -43,4 +43,4 @@ launch status
 
 **Stack discovery**
 
-The script looks for poo compose files in `<script-dir>/*/<compose-file>`. Each matching subdirectory is treated as a stack, named after the directory. The script must live alongside (or above) the stack directories — it uses its own location as the base path.
+The script looks for compose files in `<script-dir>/*/<compose-file>`. Each matching subdirectory is treated as a stack, named after the directory. The script must live alongside (or above) the stack directories — it uses its own location as the base path.
